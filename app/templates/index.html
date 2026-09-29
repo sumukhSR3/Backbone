@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clinical Note Ingestion & Principal Diagnosis Review System</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header>
+    <h1>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Clinical Data & Principal Diagnosis Review Platform
+    </h1>
+    <div style="display: flex; gap: 1rem; align-items: center;">
+      <span id="db-badge" class="badge badge-info">PostgreSQL / SQLite</span>
+      <span id="stats-badge" class="badge badge-success">0 Notes | 0 FHIR Resources</span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" onclick="switchTab('ingest-tab')">1. Ingest Clinical Note</button>
+    <button class="tab-btn" onclick="switchTab('fhir-tab')">2. FHIR R4 Explorer</button>
+    <button class="tab-btn" onclick="switchTab('review-tab')">3. ICD-10 Principal Review</button>
+    <button class="tab-btn" onclick="switchTab('benchmarks-tab')">4. Benchmarks & System Info</button>
+  </nav>
+
+  <main class="main-content">
+    <!-- TAB 1: INGESTION -->
+    <div id="ingest-tab" class="tab-pane active">
+      <div class="grid-2">
+        <div class="card">
+          <h2>Ingest Discharge Note</h2>
+          <div class="form-group">
+            <label>Load Clinical Preset</label>
+            <select id="preset-select" class="form-control" onchange="loadPreset()">
+              <option value="sepsis">Scenario 1: Sepsis & Pneumonia (Infectious / Systemic)</option>
+              <option value="heart_failure">Scenario 2: Acute Heart Failure vs COPD Exacerbation</option>
+              <option value="gi_bleed">Scenario 3: Acute Lower GI Bleed & Diverticulosis</option>
+              <option value="appendicitis">Scenario 4: Acute Appendicitis vs Diverticulitis (Uncertain)</option>
+              <option value="stroke">Scenario 5: Acute Ischemic Stroke & HTN</option>
+            </select>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+            <div class="form-group">
+              <label>Patient ID</label>
+              <input type="text" id="patient-id" class="form-control" value="PAT-8801">
+            </div>
+            <div class="form-group">
+              <label>Encounter ID</label>
+              <input type="text" id="encounter-id" class="form-control" value="ENC-9901">
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+            <div class="form-group">
+              <label>Note ID</label>
+              <input type="text" id="note-id" class="form-control" value="NOTE-7701">
+            </div>
+            <div class="form-group">
+              <label>Source System</label>
+              <input type="text" id="source-system" class="form-control" value="EPIC_EMR">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Discharge Note Text (200-400 words)</label>
+            <textarea id="note-text" class="form-control"></textarea>
+          </div>
+          <div style="display: flex; gap: 1rem;">
+            <button class="btn" onclick="ingestNote()">Ingest & Extract FHIR</button>
+            <button class="btn btn-secondary" onclick="ingestNote(true)">Test Re-ingestion (Idempotency)</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Extraction & Persistence Result</h2>
+          <div id="ingest-status" style="margin-bottom: 1rem;"></div>
+          <div class="form-group">
+            <label>Deterministic Extracted Facts & FHIR Bundle</label>
+            <pre id="ingest-json">// Ingestion response will appear here...</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: FHIR R4 EXPLORER -->
+    <div id="fhir-tab" class="tab-pane">
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <h2>Search FHIR Resources</h2>
+        <div style="display: flex; gap: 1rem; align-items: flex-end;">
+          <div class="form-group" style="flex: 1; margin: 0;">
+            <label>Encounter ID</label>
+            <input type="text" id="search-enc-id" class="form-control" value="ENC-9901">
+          </div>
+          <button class="btn" onclick="searchFhir()">Search Conditions & Documents</button>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h2>Condition Resources</h2>
+          <pre id="fhir-conditions-json">// Condition search results...</pre>
+        </div>
+        <div class="card">
+          <h2>DocumentReference & Binary Resources</h2>
+          <pre id="fhir-docref-json">// DocumentReference search results...</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: PRINCIPAL DIAGNOSIS REVIEW -->
+    <div id="review-tab" class="tab-pane">
+      <div class="grid-2">
+        <div class="card">
+          <h2>Run Principal Diagnosis Review</h2>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+            This component retrieves Encounter, Conditions, and Note strictly over HTTP via FHIR REST endpoints (without querying DB directly) and applies FY 2026 ICD-10-CM coding rules.
+          </p>
+          <div class="form-group">
+            <label>Encounter ID to Review</label>
+            <input type="text" id="review-enc-id" class="form-control" value="ENC-9901">
+          </div>
+          <div class="form-group">
+            <label>FHIR API Base URL</label>
+            <input type="text" id="review-base-url" class="form-control" value="http://localhost:8000">
+          </div>
+          <button class="btn" onclick="runReview()">Evaluate FY 2026 ICD-10-CM Guidelines</button>
+        </div>
+
+        <div class="card">
+          <h2>Review Audit Result</h2>
+          <div id="review-status-header" style="margin-bottom: 1rem;"></div>
+          <div id="review-result-container">
+            <pre id="review-json">// Review output will appear here...</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: BENCHMARKS & METRICS -->
+    <div id="benchmarks-tab" class="tab-pane">
+      <div class="grid-2">
+        <div class="card">
+          <h2>System Health & Database Evidence</h2>
+          <button class="btn" onclick="fetchMetrics()" style="margin-bottom: 1rem;">Refresh Metrics</button>
+          <pre id="metrics-json">// System metrics...</pre>
+        </div>
+        <div class="card">
+          <h2>Synthetic Dataset & Scaling Evidence</h2>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+            Run synthetic note generator or execute load test suite from command line:
+          </p>
+          <div class="quote-box">
+            <code>python3 scripts/generate_synthetic_data.py --count 1000</code><br>
+            <code>python3 scripts/run_benchmarks.py</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
